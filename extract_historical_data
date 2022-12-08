@@ -1,0 +1,115 @@
+import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+import re
+import time
+
+
+def get_link_from_each_page(url):
+    links_of_each_page = []
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'lxml')
+    find_links = soup.find_all('a', href=True, text=re.compile('新型冠状病毒肺炎疫情最新情况'))
+    for links in find_links:
+        link = links.get('href')
+        if link and '.html' in link:
+            links_of_each_page.append(link)
+    return links_of_each_page
+
+
+def get_data(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'lxml')
+
+    data = {}
+    find_date = soup.find('div', {'class': 'zf-centertime'}).text
+    date = re.findall(r'\d{4}-\d{2}-\d{2}', find_date)[0]
+    date = datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)
+    date = str(date.date())
+    data['date'] = date
+    # print(date)
+
+    content = soup.text
+    content = content.replace(' ', '')
+    texts_list = content.split('。')
+
+    local_asy_to_confirm = []
+    new_serve_case_local = []
+    existing_serve_case_imported = []
+    existing_serve_case = []
+
+    for t in texts_list:
+        if re.search(r'本土.*无症状\D*转为确诊\D*', t):
+            local_asy_to_confirm.append(t)
+        elif re.search(r'解除医学观察的密切接触者', t):
+            new_serve_case_local.append(t)
+        elif re.search(r'境外输入现有确诊', t):
+            existing_serve_case_imported.append(t)
+        elif re.search(r'截至.*确诊病例', t):
+            existing_serve_case.append(t)
+
+    if local_asy_to_confirm:
+        data['local_asy_to_confirm'] = int(
+            re.findall(r'.*本土.*含\D*(\d+)\D*无症状\D*转为确诊.*', local_asy_to_confirm[0])[0])
+    else:
+        data['local_asy_to_confirm'] = 0
+
+    if new_serve_case_local:
+        wording = re.findall(r'.*重症病例\D*前一日(.*)', new_serve_case_local[0])[0]
+        if re.search(r'增加', wording):
+            data['new_serve_case_local'] = int(re.findall(r'.*增加\D*(\d+)例', wording)[0])
+        elif re.search(r'持平', wording):
+            data['new_serve_case_local'] = 0
+        elif re.search(r'减少', wording):
+            wording = wording.replace("减少", "-")
+            data['new_serve_case_local'] = int(re.findall(r'.*(-\d+)例', wording)[0])
+    else:
+        data['new_serve_case_local'] = "n/a"
+
+    if existing_serve_case_imported:
+        if re.search(r'无重症病例', existing_serve_case_imported[0]):
+            data['existing_serve_case_imported'] = 0
+        elif re.search(r'其中重症病例', existing_serve_case_imported[0]):
+            data['existing_serve_case_imported'] = int(
+                re.findall(r'.*重症病例\D*(\d+)例.*', existing_serve_case_imported[0])[0])
+        else:
+            data['existing_serve_case_imported'] = 'n/a'
+    else:
+        data['existing_serve_case_imported'] = 'n/a'
+
+    if existing_serve_case:
+        if re.search(r'无重症病例', existing_serve_case[0]):
+            data['existing_serve_case'] = 0
+        elif re.search(r'其中重症病例', existing_serve_case[0]):
+            data['existing_serve_case'] = int(re.findall(r'.*重症病例\D*(\d+)例.*', existing_serve_case[0])[0])
+        elif re.search(r'含重症病例', existing_serve_case[0]):
+            data['existing_serve_case'] = int(re.findall(r'.*重症病例\D*(\d+)例.*', existing_serve_case[0])[0])
+        else:
+            data['existing_serve_case'] = 'n/a'
+    else:
+        data['existing_serve_case'] = 'n/a'
+
+    return data
+
+
+def main():
+    for i in range(45, 48):
+        url = 'http://www.anshan.gov.cn/asszf/ztzl/qlkj/qgyqtb/glist{}.html'.format(i)
+        link_list = get_link_from_each_page(url)
+        for l in link_list:
+            data = get_data(l)
+            print(data)
+            data_list.append(data)
+            print(l)
+        print('finished page {}'.format(i))
+        time.sleep(5)
+
+
+if __name__ == '__main__':
+    data_list = []
+    main()
+
+df = pd.DataFrame(data_list)
+
+#df.to_excel(r'C:\Users\CharisChow\Desktop\covid_4_series_2021.xlsx')
