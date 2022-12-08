@@ -112,4 +112,3 @@ if __name__ == '__main__':
 
 df = pd.DataFrame(data_list)
 
-#df.to_excel(r'C:\Users\CharisChow\Desktop\covid_4_series_2021.xlsx')
